@@ -1,31 +1,55 @@
-name: mydotnet project 
+name: mydotnet project
 
-on: 
+on:
   push:
     branches:
       - develop
+
 jobs:
-  dotnet_publish:
-       runs-on: 'ubuntu-latest'
-       steps:
-         - name: code chekout
-           uses: actions/checkout@v5
-         - name: aws configure
-           uses: aws-actions/configure-aws-credentials@v4
-           with:
-            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            aws-region: ${{ env.AWS_REGION }}
-         - name: ECR login
-           uses: aws-actions/amazon-ecr-login@v2
-         - name: build and push 
-           uses: docker/build-push-action@v6
-         - name: docker commands   
-           run: |
-             aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin 729780141709.dkr.ecr.ap-northeast-1.amazonaws.com
-             docker build -t dotnet .
-             docker tag dotnet:latest 729780141709.dkr.ecr.ap-northeast-1.amazonaws.com/dotnet:latest 
-             docker push 729780141709.dkr.ecr.ap-northeast-1.amazonaws.com/dotnet:latest
-         
-
-
+  myjob:
+    runs-on: 'ubuntu-latest'
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+    - name: dotnet version
+      uses: actions/setup-dotnet@v4 
+      with:
+        dotnet-version: "9.0.100"
+    - name: this is my dotnet publish command
+      run: dotnet publish -c Release src/Presentation/Nop.Web/Nop.Web.csproj -o demo
+    - name: SonarQube Scan
+      uses: SonarSource/sonarcloud-github-action@v3
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+          args: >   # >   multiple values
+            -Dsonar.organization=srujan2102
+            -Dsonar.projectKey=Srujan2102_nopCommerce
+            -Dsonar.host.url=https://sonarcloud.io
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    - name: Build Docker image
+      env:
+        ECR_REGISTRY: aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin 729780141709.dkr.ecr.ap-northeast-1.amazonaws.com
+        ECR_REPOSITORY: dotnet
+        IMAGE_TAG: latest
+      run: |    # | multiple values
+        docker build -t dotnet .
+        docker tag dotnet:latest 729780141709.dkr.ecr.ap-northeast-1.amazonaws.com/dotnet:latest 
+        docker push 729780141709.dkr.ecr.ap-northeast-1.amazonaws.com/dotnet:latest
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '729780141709.dkr.ecr.ap-northeast-1.amazonaws.com/dotnet:latest'
+        format: 'table'           
+        output: 'trivy-results.xml'
+        exit-code: '0'          
+        ignore-unfixed: true   
+        severity: 'CRITICAL,HIGH'
